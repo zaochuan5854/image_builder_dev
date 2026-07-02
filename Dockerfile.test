@@ -1,0 +1,5 @@
+FROM alpine:3.20
+
+RUN echo "=== Building dummy app to test CI/CD pipeline and compression ==="
+
+CMD ["echo", "Container started successfully! (Pipeline test version)"]
