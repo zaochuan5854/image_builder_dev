@@ -7,6 +7,12 @@ on:
   pull_request:
     branches: [ "main" ]
   workflow_dispatch:
+    inputs:
+      custom_tag:
+        description: 'Optional custom tag to use for the Docker image. If not provided, the workflow will generate tags based on the Git reference (branch or tag) and semantic versioning.'
+        required: false
+        default: ''
+        type: string
 
 permissions: {}
 
