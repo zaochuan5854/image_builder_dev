@@ -16,6 +16,7 @@ jobs:
       contents: read
 
     env:
+      DOCKER_USER: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
       DOCKER_REPO: ${{ vars.DOCKERHUB_REPO_NAME || secrets.DOCKERHUB_REPO_NAME }}
       OVERWRITE: ${{ vars.OVERWRITE }}
       NTFY_URL: ${{ secrets.NTFY_URL }}
@@ -48,7 +49,7 @@ jobs:
       if: github.event_name != 'pull_request'
       uses: docker/login-action@v3
       with:
-        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        username: ${{ env.DOCKER_USER }}
         password: ${{ secrets.DOCKERHUB_TOKEN }}
 
     - name: Set up QEMU
@@ -71,14 +72,13 @@ jobs:
       id: meta
       uses: docker/metadata-action@v5
       with:
-        images: ${{ secrets.DOCKERHUB_USERNAME }}/${{ steps.resolve_repo.outputs.repo }}
+        images: ${{ env.DOCKER_USER }}/${{ steps.resolve_repo.outputs.repo }}
         tags: |
           type=semver,pattern={{version}}
           type=ref,event=branch
           type=sha,format=short,prefix=sha-
           type=raw,value=latest,enable={{is_default_branch}}
 
-    # 🛑 削除前のビルド失敗によるタグ消失リスクを避けるため、まずプッシュなしでビルドのみ行う
     - name: Build Docker image (dry run)
       uses: docker/build-push-action@v6
       with:
@@ -97,7 +97,7 @@ jobs:
     - name: Check or delete existing duplicate tags
       if: github.event_name != 'pull_request'
       env:
-        USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
+        USERNAME: ${{ env.DOCKER_USER }}
         PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
         REPO_NAME: ${{ steps.resolve_repo.outputs.repo }}
         TAGS_TO_PUSH: ${{ steps.meta.outputs.tags }}
@@ -125,7 +125,6 @@ jobs:
           exit 1
         fi
         
-        # メタデータアクションで生成されたPush予定のタグを1行ずつ処理
         while IFS= read -r FULL_TAG; do
           if [ -z "$FULL_TAG" ]; then continue; fi
           
@@ -134,7 +133,6 @@ jobs:
           echo "Checking if tag '$TAG' already exists on DockerHub..."
           
           set +e
-          # 既存タグの存在確認
           CHECK_RES=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $TOKEN" \
             "https://hub.docker.com/v2/repositories/$USERNAME/$REPO_NAME/tags/$TAG/")
           CHECK_STATUS=$?
@@ -175,7 +173,6 @@ jobs:
         done <<< "$TAGS_TO_PUSH"
       shell: bash
 
-    # 🛑 ビルド成功確認後に実際にレジストリへPush（ビルドはキャッシュされているため極めて短時間で終わります）
     - name: Push Docker image
       if: github.event_name != 'pull_request'
       uses: docker/build-push-action@v6
@@ -210,7 +207,6 @@ jobs:
         STATUS="${{ job.status }}"
         TITLE="Docker Build: ${{ github.repository }}"
         
-        # 全てのプル用コマンドをリスト化
         PULL_COMMANDS=""
         while IFS= read -r FULL_TAG; do
           if [ -z "$FULL_TAG" ]; then continue; fi
