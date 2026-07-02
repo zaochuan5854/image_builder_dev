@@ -26,6 +26,17 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Free Disk Space (Ubuntu)
+      uses: jlumbroso/free-disk-space@main
+      with:
+        tool-cache: false
+        android: true
+        dotnet: true
+        haskell: true
+        large-packages: true
+        docker-images: true
+        swap-storage: true
+
     - name: Ensure dependencies
       run: |
         if ! command -v jq >/dev/null 2>&1; then
