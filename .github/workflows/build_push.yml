@@ -13,6 +13,11 @@ on:
         required: false
         default: ''
         type: string
+      custom_docker_repo:
+        description: 'Optional custom repository name to use for the Docker image. If not provided, it falls back to env.DOCKER_REPO or the GitHub repository name.'
+        required: false
+        default: ''
+        type: string
 
 permissions: {}
 
@@ -87,9 +92,11 @@ jobs:
       id: resolve_repo
       env:
         GITHUB_REPO_NAME: ${{ github.event.repository.name }}
+        INPUT_CUSTOM_REPO: ${{ inputs.custom_docker_repo }}
       run: |
         set -euo pipefail
-        RAW_REPO="${DOCKER_REPO:-$GITHUB_REPO_NAME}"
+        # 手動入力があれば最優先、なければ env.DOCKER_REPO、それもなければ GitHub リポジトリ名を使用
+        RAW_REPO="${INPUT_CUSTOM_REPO:-${DOCKER_REPO:-$GITHUB_REPO_NAME}}"
         LOWERCASE_REPO=$(echo "$RAW_REPO" | tr '[:upper:]' '[:lower:]')
         echo "repo=$LOWERCASE_REPO" >> "$GITHUB_OUTPUT"
 
@@ -103,6 +110,7 @@ jobs:
           type=ref,event=branch
           type=sha,format=short,prefix=sha-
           type=raw,value=latest,enable={{is_default_branch}}
+          type=raw,value=${{ inputs.custom_tag }},enable=${{ inputs.custom_tag != '' }}
 
     - name: Build Docker image (dry run)
       uses: docker/build-push-action@v6
