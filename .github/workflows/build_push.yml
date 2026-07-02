@@ -27,6 +27,24 @@ jobs:
     - name: Checkout repository
       uses: actions/checkout@v4
 
+    - name: Send start notification with vars via ntfy.sh
+      if: env.NTFY_URL != ''
+      run: |
+        TITLE="Docker Build Started: ${{ github.repository }}"
+        
+        MESSAGE="Docker image build pipeline has been triggered. 🚀
+        
+        [Active Variables (vars)]
+        ${{ toJSON(vars) }}"
+        
+        curl \
+          -H "Title: $TITLE" \
+          -H "Priority: 3" \
+          -H "Tags: rocket,gear" \
+          -d "$MESSAGE" \
+          "$NTFY_URL"
+      shell: bash
+
     - name: Free Disk Space (Ubuntu)
       uses: jlumbroso/free-disk-space@main
       with:
