@@ -1,54 +1,66 @@
-FROM nvidia/cuda:12.8.1-cudnn-devel-ubuntu24.04
+FROM nvidia/cuda:12.8.0-devel-ubuntu22.04
 
-ARG TORCH_CUDA_INDEX_URL="https://download.pytorch.org/whl/cu128"
+# 1. uv のインストール
+COPY --from=ghcr.io/astral-sh/uv:0.9.2 /uv /uvx /usr/local/bin/
 
-RUN apt-get update && \
-    DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-    tzdata && \
-    ln -sf /usr/share/zoneinfo/Asia/Tokyo /etc/localtime && \
-    echo "Asia/Tokyo" > /etc/timezone && \
-    apt-get clean && \
-    rm -rf /var/lib/apt/lists/*
+# 2. タイムゾーン設定
+ENV TZ=Asia/Tokyo
+RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
+# 3. 必要なシステムパッケージのインストール
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential curl git tmux nano htop lsyncd ssh-client fontconfig fonts-ipafont fonts-ipaexfont\
+    build-essential \
+    ca-certificates \
+    curl \
+    git \
+    nano \
+    tmux \
+    htop \
+    libgl1 \
+    libglib2.0-0 \
+    iputils-ping \
     && rm -rf /var/lib/apt/lists/*
 
-RUN fc-cache -fv
+WORKDIR /workspace
 
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
-ENV VIRTUAL_ENV=/opt/venv
-ENV PATH="$VIRTUAL_ENV/bin:$PATH"
+# 4. pyproject.toml を Dockerfile 内にベタ書きして生成
+RUN cat << 'EOF' > pyproject.toml
+[project]
+name = "cosmos"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = "~=3.12.0"
+dependencies = [
+    "torch==2.11.0",
+    "torchvision==0.26.0",
+    "torchaudio==2.11.0",
+    "vllm",
+    "vllm-omni",
+    "cosmos-guardrail>=0.3.1",
+]
 
-WORKDIR /opt
-ENV UV_HTTP_TIMEOUT=600
-RUN uv venv $VIRTUAL_ENV --python 3.12 --seed \
-    && uv pip install torch torchvision torchaudio -v \
-       --index-url ${TORCH_CUDA_INDEX_URL} \
-    && uv pip install comfy-cli ComfyUI-EasyNodes beautifulsoup4 aiohttp_retry
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
 
-RUN (echo y; echo n; echo y) | comfy --workspace /opt/comfyui install --nvidia --cuda-version 12.8\
-    && comfy --workspace /opt/comfyui node install \
-    ComfyUI-Manager \
-    was-node-suite-comfyui
+[tool.uv.sources]
+torch = { index = "pytorch-cu128" }
+torchvision = { index = "pytorch-cu128" }
+torchaudio = { index = "pytorch-cu128" }
+vllm = { git = "https://github.com/vllm-project/vllm.git", rev = "ee0da84ab9e04ac7610e28580af62c365e898389" }
+vllm-omni = { git = "https://github.com/vllm-project/vllm-omni.git", rev = "d4a869fe5e2edd49af48026051948c8d1018d727" }
+EOF
 
-RUN cd /opt/comfyui/custom_nodes \
-    && git clone https://github.com/Suzie1/ComfyUI_Comfyroll_CustomNodes.git
+# 5. 仮想環境の設定
+ENV UV_PROJECT_ENVIRONMENT=/opt/venv
+ENV PATH="/opt/venv/bin:$PATH"
 
-RUN cd /opt/comfyui/custom_nodes \
-    && git clone https://github.com/rgthree/rgthree-comfy.git
+# 6. ハブ転送エラー回避の環境変数をあらかじめ追加
+ENV HF_HUB_ENABLE_HF_TRANSFER=0
 
-RUN cd /opt/comfyui/custom_nodes \
-    && git clone https://github.com/cosmicbuffalo/comfyui-mobile-frontend.git
-
-ENV UV_INDEX_STRATEGY=unsafe-best-match
-ARG CACHEBUST=1
-
-RUN cd /opt/comfyui/custom_nodes \
-    && git clone https://github.com/zaochuan5854/ComfyUI-TensorRT-Reforge.git \
-    && cd ComfyUI-TensorRT-Reforge \
-    && uv pip install -r requirements.txt
-
-WORKDIR /opt/comfyui
-
-ENV COMFYUI_PATH="/opt/comfyui"
+# 7. コンテナのプラットフォーム（manylinux_x86_64）に合わせて自動でロック＆同期
+# (あえて --frozen を外すことで、ホストの lock が無くても完璧な整合性で一発解決します)
+RUN --mount=type=cache,target=/root/.cache/uv \
+    uv sync
