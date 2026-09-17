@@ -52,19 +52,17 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
     echo "Asia/Tokyo" > /etc/timezone && \
     rm -rf /var/lib/apt/lists/*
 
-# 基本ツール、フォント（日本語含む）、OpenCV描画依存 + TRTランタイム
-# TRT 11.x 系は維持。pip側 (<11.2.0 → 11.1.x解決) と合わせ apt も 11.1.0 に固定。
-# libnvonnxparser*/tensorrt-bin は誤名のため正名 (libnvonnxparsers*/libnvinfer-bin) に修正。
-ARG TRT_APT_VERSION="11.1.0.106-1+cuda13.3"
+# 基本ツール、フォント（日本語含む）、OpenCV描画依存
+# TRT apt は入れない: TRT 11.x の cuda13.0 向け debian は公開されていない
+# (11.x は cuda12.9/13.2/13.3/13.4 のみ) ため base CUDA 13.0.3 の純度維持を優先。
+# TRT 11.x ランタイムは pip tensorrt-cu13 (<11.2.0) で提供。trtexec が要る場合は
+# local-repo deb (要NVIDIAログイン) を別途追加すること。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl unzip git tmux nano htop lsyncd ssh-client \
     build-essential python3.12 python3.12-venv \
     fonts-dejavu-core fonts-noto-core fonts-noto-cjk fonts-ubuntu \
     fonts-ipafont fonts-ipaexfont fontconfig \
     libgl1 libglib2.0-0 \
-    libnvinfer11=${TRT_APT_VERSION} libnvinfer-dev=${TRT_APT_VERSION} \
-    libnvinfer-bin=${TRT_APT_VERSION} \
-    libnvonnxparsers11=${TRT_APT_VERSION} libnvonnxparsers-dev=${TRT_APT_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
 RUN fc-cache -fv
