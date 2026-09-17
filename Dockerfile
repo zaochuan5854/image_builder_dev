@@ -26,11 +26,12 @@ ENV UV_HTTP_TIMEOUT=600
 RUN uv venv $VIRTUAL_ENV --python /usr/bin/python3.12
 
 # 1. PyTorch (cu130) の導入 — 2.13.x 系に固定
-# (torchaudio の cu130 最終版は 2.11.x のため trio 完全一致は不可。2.11.x は torch 2.13 と互換解決可)
-RUN uv pip install "torch==2.13.*" "torchvision==0.28.*" "torchaudio==2.11.*" --index-url ${TORCH_CUDA_INDEX_URL}
+# torchaudio は除外 (audio系 extra ノードは起動時警告スキップ、画像系フローに影響なし)。
+RUN uv pip install "torch==2.13.*" "torchvision==0.28.*" --index-url ${TORCH_CUDA_INDEX_URL}
 
-# 2. ComfyUI 公式要件 + ユーティリティの導入
-RUN uv pip install -r /opt/ComfyUI/requirements.txt \
+# 2. ComfyUI 公式要件 + ユーティリティの導入 (torchaudio は除外)
+RUN grep -v -E "^torchaudio([<>=!~ ]|$)" /opt/ComfyUI/requirements.txt > /tmp/comfy-req.txt \
+    && uv pip install -r /tmp/comfy-req.txt \
     && uv pip install wait-for-it beautifulsoup4 aiohttp_retry
 
 # 3. TensorRT 11.x (sm89 FP8 対応) & 変換ツールの導入
@@ -97,10 +98,13 @@ ENV COMFYUI_PATH="/opt/ComfyUI"
 ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 
 # カスタムノードの事前クローン (Manager / was-node-suite / devtools)
+# 再現性のため commit 固定 (2026-09-17 時点の各 main HEAD)。
 WORKDIR /opt/ComfyUI/custom_nodes
-RUN git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Manager.git && \
-    git clone --depth 1 https://github.com/WASasquatch/was-node-suite-comfyui.git && \
-    mkdir -p ComfyUI_devtools
+RUN git clone --depth 1 https://github.com/ltdrdata/ComfyUI-Manager.git \
+    && cd ComfyUI-Manager && git fetch --depth 1 origin 21ab2b78c2ce74a01a11f4913b72e2e1b831cac1 && git checkout -q 21ab2b78c2ce74a01a11f4913b72e2e1b831cac1 && cd .. \
+    && git clone --depth 1 https://github.com/WASasquatch/was-node-suite-comfyui.git \
+    && cd was-node-suite-comfyui && git fetch --depth 1 origin 9934caa92dd0ddbb533cdfd5645e08c43ec629af && git checkout -q 9934caa92dd0ddbb533cdfd5645e08c43ec629af && cd .. \
+    && mkdir -p ComfyUI_devtools
 
 WORKDIR /opt/ComfyUI
 
