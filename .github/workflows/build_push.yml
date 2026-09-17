@@ -33,7 +33,6 @@ jobs:
       OVERWRITE: ${{ vars.OVERWRITE }}
       NTFY_URL: ${{ secrets.NTFY_URL }}
       PLATFORMS: ${{ vars.PLATFORMS || 'linux/amd64' }}
-      COMPRESSION: ${{ vars.COMPRESSION || 'gzip' }}
 
     steps:
     - name: Checkout repository
@@ -125,8 +124,6 @@ jobs:
         cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=min' || '' }}
         provenance: true
         sbom: true
-        compression: ${{ env.COMPRESSION }}
-        oci: true
 
     - name: Check or delete existing duplicate tags
       if: github.event_name != 'pull_request'
@@ -219,8 +216,6 @@ jobs:
         cache-from: type=gha
         provenance: true
         sbom: true
-        compression: ${{ env.COMPRESSION }}
-        oci: true
 
     - name: Generate Pull Commands Summary
       if: github.event_name != 'pull_request'

@@ -52,16 +52,19 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
     echo "Asia/Tokyo" > /etc/timezone && \
     rm -rf /var/lib/apt/lists/*
 
-# 基本ツール、フォント（日本語含む）、OpenCV描画依存 + TRTランタイム — TRT系は変更なし
+# 基本ツール、フォント（日本語含む）、OpenCV描画依存 + TRTランタイム
+# TRT 11.x 系は維持。pip側 (<11.2.0 → 11.1.x解決) と合わせ apt も 11.1.0 に固定。
+# libnvonnxparser*/tensorrt-bin は誤名のため正名 (libnvonnxparsers*/libnvinfer-bin) に修正。
+ARG TRT_APT_VERSION="11.1.0.106-1+cuda13.3"
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl unzip git tmux nano htop lsyncd ssh-client \
     build-essential python3.12 python3.12-venv \
     fonts-dejavu-core fonts-noto-core fonts-noto-cjk fonts-ubuntu \
     fonts-ipafont fonts-ipaexfont fontconfig \
     libgl1 libglib2.0-0 \
-    libnvinfer11 libnvinfer-dev \
-    libnvonnxparser11 libnvonnxparser-dev \
-    tensorrt-bin \
+    libnvinfer11=${TRT_APT_VERSION} libnvinfer-dev=${TRT_APT_VERSION} \
+    libnvinfer-bin=${TRT_APT_VERSION} \
+    libnvonnxparsers11=${TRT_APT_VERSION} libnvonnxparsers-dev=${TRT_APT_VERSION} \
     && rm -rf /var/lib/apt/lists/*
 
 RUN fc-cache -fv
