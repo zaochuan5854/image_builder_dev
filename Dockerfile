@@ -25,9 +25,9 @@ ENV VIRTUAL_ENV=/opt/venv
 ENV UV_HTTP_TIMEOUT=600
 RUN uv venv $VIRTUAL_ENV --python /usr/bin/python3.12
 
-# 1. PyTorch (cu130) の導入 — 2.12.x 系に固定
-# (torchaudio の cu130 最終版は 2.11.x のため trio 完全一致は不可。2.11.x は torch 2.12 と互換解決可)
-RUN uv pip install "torch==2.12.*" "torchvision==0.27.*" "torchaudio==2.11.*" --index-url ${TORCH_CUDA_INDEX_URL}
+# 1. PyTorch (cu130) の導入 — 2.13.x 系に固定
+# (torchaudio の cu130 最終版は 2.11.x のため trio 完全一致は不可。2.11.x は torch 2.13 と互換解決可)
+RUN uv pip install "torch==2.13.*" "torchvision==0.28.*" "torchaudio==2.11.*" --index-url ${TORCH_CUDA_INDEX_URL}
 
 # 2. ComfyUI 公式要件 + ユーティリティの導入
 RUN uv pip install -r /opt/ComfyUI/requirements.txt \
