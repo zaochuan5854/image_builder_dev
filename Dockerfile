@@ -35,12 +35,19 @@ RUN uv pip install -r /opt/ComfyUI/requirements.txt \
 # 3. TensorRT 11.x (sm89 FP8 対応) & 変換ツールの導入
 # onnx==1.20.0: TRT 11.x サポートマトリクス記載版 (opset 9〜25)。
 # onnx-graphsurgeon==0.6.1: 現行 0.6.x 系最新 (要求 onnx>=1.14.0 を満たす)。
+# onnxruntime-gpu==1.30.0: 1.27+ は CUDA 13.0 ビルドで base 13.0.3 と一致 (CUDA EP 用)。
+#   TRT EP は文書上 TRT 10.x までの対応のため TRT 11 との組合せは未保証。Nightly index 不要。
+# onnxscript==0.7.2: torch.onnx export 用 (要求 onnx>=1.17 を満たす)。
+# flatbuffers/numpy/packaging/protobuf/sympy 等は推移依存で自動解決のため明記不要
+# (ORT 1.30 確定依存: flatbuffers, numpy>=1.21.6, packaging, protobuf>=4.25.8)。
 RUN uv pip install \
     "tensorrt-cu13>=11,<12" \
     "tensorrt-cu13-libs>=11,<12" \
     polygraphy \
     "onnx==1.20.0" \
-    "onnx-graphsurgeon==0.6.1"
+    "onnx-graphsurgeon==0.6.1" \
+    "onnxruntime-gpu==1.30.0" \
+    "onnxscript==0.7.2"
 
 
 # ==============================================================================
