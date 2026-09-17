@@ -32,11 +32,15 @@ RUN uv pip install torch torchvision torchaudio --index-url ${TORCH_CUDA_INDEX_U
 RUN uv pip install -r /opt/ComfyUI/requirements.txt \
     && uv pip install wait-for-it beautifulsoup4 aiohttp_retry
 
-# 3. TensorRT 11.x (sm89 FP8 対応) & 変換ツールの導入 — 変更なし
+# 3. TensorRT 11.x (sm89 FP8 対応) & 変換ツールの導入
+# onnx==1.20.0: TRT 11.x サポートマトリクス記載版 (opset 9〜25)。
+# onnx-graphsurgeon==0.6.1: 現行 0.6.x 系最新 (要求 onnx>=1.14.0 を満たす)。
 RUN uv pip install \
-    "tensorrt-cu13>=11.0.0,<11.2.0" \
-    "tensorrt-cu13-libs>=11.0.0,<11.2.0" \
-    polygraphy onnx
+    "tensorrt-cu13>=11,<12" \
+    "tensorrt-cu13-libs>=11,<12" \
+    polygraphy \
+    "onnx==1.20.0" \
+    "onnx-graphsurgeon==0.6.1"
 
 
 # ==============================================================================
