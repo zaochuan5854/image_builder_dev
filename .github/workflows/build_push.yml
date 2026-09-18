@@ -1,23 +1,24 @@
 name: Build and Push Docker Image to DockerHub
 
 on:
-  push:
-    branches: [ "main" ]
-    tags: [ "v*.*.*" ]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
   workflow_dispatch:
     inputs:
-      custom_tag:
-        description: 'Optional custom tag to use for the Docker image. If not provided, the workflow will generate tags based on the Git reference (branch or tag) and semantic versioning.'
-        required: false
-        default: ''
+      docker_tag:
+        description: "Docker image tag (e.g. latest, v1.2.3, dev)"
+        required: true
         type: string
-      custom_docker_repo:
-        description: 'Optional custom repository name to use for the Docker image. If not provided, it falls back to env.DOCKER_REPO or the GitHub repository name.'
-        required: false
-        default: ''
+      docker_repo:
+        description: "DockerHub repository name"
+        required: true
         type: string
+      overwrite:
+        description: "Overwrite the existing DockerHub tag if it already exists"
+        required: true
+        default: false
+        type: boolean
 
 permissions: {}
 
@@ -29,236 +30,225 @@ jobs:
 
     env:
       DOCKER_USER: ${{ vars.DOCKERHUB_USERNAME || secrets.DOCKERHUB_USERNAME }}
-      DOCKER_REPO: ${{ vars.DOCKERHUB_REPO_NAME || secrets.DOCKERHUB_REPO_NAME }}
-      OVERWRITE: ${{ vars.OVERWRITE }}
+      DOCKER_REPO: ${{ inputs.docker_repo }}
+      DOCKER_TAG: ${{ inputs.docker_tag }}
+      OVERWRITE: ${{ inputs.overwrite && '1' || '0' }}
       NTFY_URL: ${{ secrets.NTFY_URL }}
       PLATFORMS: ${{ vars.PLATFORMS || 'linux/amd64' }}
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v6
+      - name: Checkout repository
+        uses: actions/checkout@v6
 
-    - name: Send start notification with vars via ntfy.sh
-      if: env.NTFY_URL != ''
-      run: |
-        TITLE="Docker Build Started: ${{ github.repository }}"
-        
-        MESSAGE="Docker image build pipeline has been triggered. 🚀
-        
-        [Active Variables (vars)]
-        ${{ toJSON(vars) }}"
-        
-        curl \
-          -H "Title: $TITLE" \
-          -H "Priority: 3" \
-          -H "Tags: rocket,gear" \
-          -d "$MESSAGE" \
-          "$NTFY_URL"
-      shell: bash
+      - name: Send start notification with vars via ntfy.sh
+        if: env.NTFY_URL != ''
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    - name: Free Disk Space (Ubuntu)
-      uses: jlumbroso/free-disk-space@main
-      with:
-        tool-cache: false
-        android: true
-        dotnet: true
-        haskell: true
-        large-packages: true
-        docker-images: true
-        swap-storage: true
+          TITLE="Docker Build Started: ${{ github.repository }}"
+          MESSAGE="Docker image build pipeline has been triggered. 🚀
 
-    - name: Ensure dependencies
-      run: |
-        if ! command -v jq >/dev/null 2>&1; then
-          echo "::error::jq is required but not installed on this runner. Please install it (e.g. run 'sudo apt-get update && sudo apt-get install -y jq' on Debian/Ubuntu) to run this workflow."
-          exit 1
-        fi
+          [Active Variables (vars)]
+          ${{ toJSON(vars) }}"
 
-    - name: Log in to DockerHub
-      if: github.event_name != 'pull_request'
-      uses: docker/login-action@v4
-      with:
-        username: ${{ env.DOCKER_USER }}
-        password: ${{ secrets.DOCKERHUB_TOKEN }}
+          curl \
+            -H "Title: $TITLE" \
+            -H "Priority: 3" \
+            -H "Tags: rocket,gear" \
+            -d "$MESSAGE" \
+            "$NTFY_URL"
 
-    # - name: Set up QEMU
-      # QEMU無効化中 (linux/amd64単一archのため不要。マルチarch時に復活)
-      # uses: docker/setup-qemu-action@v4
+      - name: Free Disk Space (Ubuntu)
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: false
+          android: true
+          dotnet: true
+          haskell: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
 
-    - name: Set up Docker Buildx
-      uses: docker/setup-buildx-action@v4
+      - name: Ensure dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
 
-    - name: Resolve Docker Repository Name
-      id: resolve_repo
-      env:
-        GITHUB_REPO_NAME: ${{ github.event.repository.name }}
-        INPUT_CUSTOM_REPO: ${{ inputs.custom_docker_repo }}
-      run: |
-        set -euo pipefail
-        # 手動入力があれば最優先、なければ env.DOCKER_REPO、それもなければ GitHub リポジトリ名を使用
-        RAW_REPO="${INPUT_CUSTOM_REPO:-${DOCKER_REPO:-$GITHUB_REPO_NAME}}"
-        LOWERCASE_REPO=$(echo "$RAW_REPO" | tr '[:upper:]' '[:lower:]')
-        echo "repo=$LOWERCASE_REPO" >> "$GITHUB_OUTPUT"
-
-    - name: Extract Docker metadata
-      id: meta
-      uses: docker/metadata-action@v6
-      with:
-        images: ${{ env.DOCKER_USER }}/${{ steps.resolve_repo.outputs.repo }}
-        tags: |
-          type=semver,pattern={{version}}
-          type=ref,event=branch
-          type=sha,format=short,prefix=sha-
-          type=raw,value=latest,enable={{is_default_branch}}
-          type=raw,value=${{ inputs.custom_tag }},enable=${{ inputs.custom_tag != '' }}
-
-    - name: Build Docker image (dry run)
-      uses: docker/build-push-action@v7
-      with:
-        context: .
-        push: false
-        platforms: ${{ env.PLATFORMS }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        cache-to: ${{ github.event_name != 'pull_request' && 'type=gha,mode=min' || '' }}
-        provenance: true
-        sbom: true
-
-    - name: Check or delete existing duplicate tags
-      if: github.event_name != 'pull_request'
-      env:
-        USERNAME: ${{ env.DOCKER_USER }}
-        PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
-        REPO_NAME: ${{ steps.resolve_repo.outputs.repo }}
-        TAGS_TO_PUSH: ${{ steps.meta.outputs.tags }}
-      run: |
-        set -euo pipefail
-
-        echo "Authenticating with DockerHub API..."
-        set +e
-        LOGIN_RES=$(curl -s --fail-with-body -X POST \
-          -H "Content-Type: application/json" \
-          -d "{\"username\": \"$USERNAME\", \"password\": \"$PASSWORD\"}" \
-          https://hub.docker.com/v2/users/login/)
-        CURL_STATUS=$?
-        set -e
-
-        if [ $CURL_STATUS -ne 0 ]; then
-          echo "::error::DockerHub API authentication request failed. Response: $LOGIN_RES"
-          exit 1
-        fi
-        
-        TOKEN=$(echo "$LOGIN_RES" | jq -r '.token // empty' 2>/dev/null || true)
-        
-        if [ -z "$TOKEN" ]; then
-          echo "::error::Authentication failed. Token could not be extracted."
-          exit 1
-        fi
-        
-        while IFS= read -r FULL_TAG; do
-          if [ -z "$FULL_TAG" ]; then continue; fi
-          
-          TAG="${FULL_TAG##*:}"
-          
-          echo "Checking if tag '$TAG' already exists on DockerHub..."
-          
-          set +e
-          CHECK_RES=$(curl -s -w "\n%{http_code}" -H "Authorization: Bearer $TOKEN" \
-            "https://hub.docker.com/v2/repositories/$USERNAME/$REPO_NAME/tags/$TAG/")
-          CHECK_STATUS=$?
-          set -e
-          
-          if [ $CHECK_STATUS -ne 0 ]; then
-            echo "::error::DockerHub API check request failed."
+          if ! command -v jq >/dev/null 2>&1; then
+            echo "::error::jq is required but not installed on this runner."
             exit 1
           fi
-          
+
+      - name: Validate inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ -z "$DOCKER_TAG" ]]; then
+            echo "::error::Docker tag must not be empty."
+            exit 1
+          fi
+
+          if [[ -z "$DOCKER_REPO" ]]; then
+            echo "::error::DockerHub repository name must not be empty."
+            exit 1
+          fi
+
+          if [[ ! "$DOCKER_TAG" =~ ^[a-zA-Z0-9_][a-zA-Z0-9_.-]*$ ]]; then
+            echo "::error::Invalid Docker tag: $DOCKER_TAG"
+            exit 1
+          fi
+
+          if [[ ! "$DOCKER_REPO" =~ ^[a-z0-9][a-z0-9_.-]*$ ]]; then
+            echo "::error::Invalid DockerHub repository name: $DOCKER_REPO"
+            exit 1
+          fi
+
+      - name: Log in to DockerHub
+        if: github.event_name == 'workflow_dispatch'
+        uses: docker/login-action@v4
+        with:
+          username: ${{ env.DOCKER_USER }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Extract Docker metadata
+        id: meta
+        uses: docker/metadata-action@v6
+        with:
+          images: ${{ env.DOCKER_USER }}/${{ env.DOCKER_REPO }}
+          tags: |
+            type=raw,value=${{ env.DOCKER_TAG }}
+
+      - name: Check or delete existing duplicate tags
+        if: github.event_name == 'workflow_dispatch'
+        env:
+          USERNAME: ${{ env.DOCKER_USER }}
+          PASSWORD: ${{ secrets.DOCKERHUB_TOKEN }}
+          REPO_NAME: ${{ env.DOCKER_REPO }}
+          TAG_TO_PUSH: ${{ env.DOCKER_TAG }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "Authenticating with DockerHub API..."
+
+          LOGIN_RES=$(curl -sS --fail-with-body -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"username\": \"$USERNAME\", \"password\": \"$PASSWORD\"}" \
+            https://hub.docker.com/v2/users/login/)
+
+          TOKEN=$(echo "$LOGIN_RES" | jq -r '.token // empty')
+
+          if [[ -z "$TOKEN" ]]; then
+            echo "::error::Authentication failed. Token could not be extracted."
+            exit 1
+          fi
+
+          echo "Checking if tag '$TAG_TO_PUSH' already exists on DockerHub..."
+
+          CHECK_RES=$(curl -sS -w "\n%{http_code}" \
+            -H "Authorization: Bearer $TOKEN" \
+            "https://hub.docker.com/v2/repositories/$USERNAME/$REPO_NAME/tags/$TAG_TO_PUSH/")
+
           HTTP_CODE=$(echo "$CHECK_RES" | tail -n1)
-          
-          if [ "$HTTP_CODE" = "200" ]; then
-            if [ "$OVERWRITE" = "1" ]; then
-              echo "Tag '$TAG' exists and OVERWRITE is enabled. Deleting existing tag to prepare for clean overwrite..."
-              set +e
-              DEL_RES=$(curl -s -w "\n%{http_code}" -X DELETE -H "Authorization: Bearer $TOKEN" \
-                "https://hub.docker.com/v2/repositories/$USERNAME/$REPO_NAME/tags/$TAG/")
-              DEL_STATUS=$?
-              set -e
+
+          if [[ "$HTTP_CODE" == "200" ]]; then
+            if [[ "$OVERWRITE" == "1" ]]; then
+              echo "Tag exists and overwrite is enabled. Deleting existing tag..."
+
+              DEL_RES=$(curl -sS -w "\n%{http_code}" -X DELETE \
+                -H "Authorization: Bearer $TOKEN" \
+                "https://hub.docker.com/v2/repositories/$USERNAME/$REPO_NAME/tags/$TAG_TO_PUSH/")
+
               DEL_HTTP_CODE=$(echo "$DEL_RES" | tail -n1)
-              if [ "$DEL_HTTP_CODE" = "204" ] || [ "$DEL_HTTP_CODE" = "200" ] || [ "$DEL_HTTP_CODE" = "202" ]; then
-                echo "::notice:: Successfully deleted existing duplicate tag '$TAG' to prepare for clean overwrite."
-              else
-                echo "::error:: Failed to delete existing duplicate tag '$TAG' (HTTP Code: $DEL_HTTP_CODE)."
+
+              if [[ "$DEL_HTTP_CODE" != "204" &&
+                    "$DEL_HTTP_CODE" != "200" &&
+                    "$DEL_HTTP_CODE" != "202" ]]; then
+                echo "::error::Failed to delete existing tag. HTTP Code: $DEL_HTTP_CODE"
                 exit 1
               fi
+
+              echo "::notice::Existing tag '$TAG_TO_PUSH' deleted."
             else
-              echo "::error:: Tag '$TAG' already exists on DockerHub and OVERWRITE is not enabled. Failing build to prevent overwrite."
+              echo "::error::Tag '$TAG_TO_PUSH' already exists and overwrite is disabled."
               exit 1
             fi
-          elif [ "$HTTP_CODE" = "404" ]; then
-            echo "Tag '$TAG' does not exist yet. Safe to push."
+          elif [[ "$HTTP_CODE" == "404" ]]; then
+            echo "Tag does not exist yet. Safe to push."
           else
-            echo "::error:: DockerHub API returned unexpected HTTP status code $HTTP_CODE while checking tag '$TAG'."
+            echo "::error::Unexpected DockerHub API status: $HTTP_CODE"
             exit 1
           fi
-        done <<< "$TAGS_TO_PUSH"
-      shell: bash
 
-    - name: Push Docker image
-      if: github.event_name != 'pull_request'
-      uses: docker/build-push-action@v7
-      with:
-        context: .
-        push: true
-        platforms: ${{ env.PLATFORMS }}
-        tags: ${{ steps.meta.outputs.tags }}
-        labels: ${{ steps.meta.outputs.labels }}
-        cache-from: type=gha
-        provenance: true
-        sbom: true
 
-    - name: Generate Pull Commands Summary
-      if: github.event_name != 'pull_request'
-      run: |
-        echo "### 🚀 Pull Commands" >> $GITHUB_STEP_SUMMARY
-        echo "Use the following commands to pull the built images:" >> $GITHUB_STEP_SUMMARY
-        echo '```bash' >> $GITHUB_STEP_SUMMARY
-        while IFS= read -r FULL_TAG; do
-          if [ -z "$FULL_TAG" ]; then continue; fi
-          echo "docker pull $FULL_TAG" >> $GITHUB_STEP_SUMMARY
-        done <<< "${{ steps.meta.outputs.tags }}"
-        echo '```' >> $GITHUB_STEP_SUMMARY
-      shell: bash
+      - name: Build Docker image
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: false
+          platforms: ${{ env.PLATFORMS }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=min
+          provenance: true
+          sbom: true
 
-    - name: Send notification via ntfy.sh
-      if: always() && env.NTFY_URL != ''
-      run: |
-        STATUS="${{ job.status }}"
-        TITLE="Docker Build: ${{ github.repository }}"
-        
-        PULL_COMMANDS=""
-        while IFS= read -r FULL_TAG; do
-          if [ -z "$FULL_TAG" ]; then continue; fi
-          PULL_COMMANDS="${PULL_COMMANDS}docker pull $FULL_TAG"$'\n'
-        done <<< "${{ steps.meta.outputs.tags }}"
-        
-        if [ "$STATUS" = "success" ]; then
-          TAGS="white_check_mark"
-          PRIORITY="3"
-          MESSAGE="Workflow build-and-push finished successfully. 🎉
-        
-        Pull Commands:
-        $PULL_COMMANDS"
-        else
-          TAGS="x"
-          PRIORITY="5"
-          MESSAGE="Workflow build-and-push failed! ❌"
-        fi
-        
-        curl \
-          -H "Title: $TITLE" \
-          -H "Priority: $PRIORITY" \
-          -H "Tags: $TAGS" \
-          -d "$MESSAGE" \
-          "$NTFY_URL"
-      shell: bash
+      - name: Push Docker image
+        if: github.event_name == 'workflow_dispatch'
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          push: true
+          platforms: ${{ env.PLATFORMS }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          provenance: true
+          sbom: true
+
+      - name: Generate Pull Commands Summary
+        if: github.event_name == 'workflow_dispatch'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          echo "### 🚀 Pull Commands" >> "$GITHUB_STEP_SUMMARY"
+          echo "Use the following command to pull the built image:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "docker pull ${{ steps.meta.outputs.tags }}" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY
+
+      - name: Send notification via ntfy.sh
+        if: always() && env.NTFY_URL != ''
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          STATUS="${{ job.status }}"
+          TITLE="Docker Build: ${{ github.repository }}"
+
+          if [[ "$STATUS" == "success" ]]; then
+            TAGS="white_check_mark"
+            PRIORITY="3"
+            MESSAGE="Workflow build-and-push finished successfully. 🎉
+
+          Pull Command:
+          docker pull ${{ steps.meta.outputs.tags }}"
+          else
+            TAGS="x"
+            PRIORITY="5"
+            MESSAGE="Workflow build-and-push failed! ❌"
+          fi
+
+          curl \
+            -H "Title: $TITLE" \
+            -H "Priority: $PRIORITY" \
+            -H "Tags: $TAGS" \
+            -d "$MESSAGE" \
+            "$NTFY_URL"
