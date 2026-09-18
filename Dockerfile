@@ -14,7 +14,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && rm -rf /var/lib/apt/lists/*
 
 # uv の導入
-COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /bin/
+COPY --from=ghcr.io/astral-sh/uv:latest /uv /uvx /usr/local/bin/
 
 # ComfyUI をバージョン固定で clone
 RUN git clone --depth 1 --branch ${COMFYUI_VERSION} \
@@ -25,9 +25,8 @@ ENV VIRTUAL_ENV=/opt/venv
 ENV UV_HTTP_TIMEOUT=600
 RUN uv venv $VIRTUAL_ENV --python /usr/bin/python3.12
 
-# 1. PyTorch (cu130) の導入 — 2.13.x 系に固定
-# torchaudio は除外 (audio系 extra ノードは起動時警告スキップ、画像系フローに影響なし)。
-RUN uv pip install "torch==2.13.*" "torchvision==0.28.*" --index-url ${TORCH_CUDA_INDEX_URL}
+# 1. PyTorch (cu130) の導入 — 2.10.x 系に固定
+RUN pip install torch==2.10.0 torchvision==0.25.0 torchaudio==2.10.0 --index-url ${TORCH_CUDA_INDEX_URL}
 
 # 2. ComfyUI 公式要件 + ユーティリティの導入 (torchaudio は除外)
 RUN grep -v -E "^torchaudio([<>=!~ ]|$)" /opt/ComfyUI/requirements.txt > /tmp/comfy-req.txt \
@@ -72,7 +71,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends tzdata && \
 # local-repo deb (要NVIDIAログイン) を別途追加すること。
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates curl unzip git tmux nano htop lsyncd ssh-client \
-    build-essential python3.12 python3.12-venv \
+    build-essential python3.12 python3.12-venv python3.12-dev \
     fonts-dejavu-core fonts-noto-core fonts-noto-cjk fonts-ubuntu \
     fonts-ipafont fonts-ipaexfont fontconfig \
     libgl1 libglib2.0-0 \
@@ -94,6 +93,9 @@ COPY --from=builder /opt/ComfyUI /opt/ComfyUI
 # Python パスの設定
 ENV PATH="/opt/venv/bin:$PATH"
 ENV VIRTUAL_ENV="/opt/venv"
+ENV UV_PYTHON="/opt/venv/bin/python"
+ENV UV_PYTHON_DOWNLOADS=never
+
 ENV COMFYUI_PATH="/opt/ComfyUI"
 ENV LD_LIBRARY_PATH="/usr/lib/x86_64-linux-gnu:/usr/local/cuda/lib64:${LD_LIBRARY_PATH}"
 
