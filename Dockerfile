@@ -86,7 +86,9 @@ RUN curl -fsSL https://fnm.vercel.app/install | bash -s -- --install-dir /usr/lo
  && npm i -g corepack@latest && corepack enable \
  && chmod -R a+w /opt/fnm
 
-# Stage 1 (builder) から venv と ComfyUI をコピー
+# Stage 1 (builder) から uv venv ComfyUI をコピー
+COPY --from=builder /usr/local/bin/uv /usr/local/bin/uv
+COPY --from=builder /usr/local/bin/uvx /usr/local/bin/uvx
 COPY --from=builder /opt/venv /opt/venv
 COPY --from=builder /opt/ComfyUI /opt/ComfyUI
 
