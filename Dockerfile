@@ -5,7 +5,7 @@ FROM ubuntu:24.04 AS builder
 ENV DEBIAN_FRONTEND=noninteractive
 ENV UV_COMPILE_BYTECODE=1 UV_LINK_MODE=copy UV_PYTHON_DOWNLOADS=0
 
-ARG COMFYUI_VERSION=v0.30.0
+ARG COMFYUI_VERSION=v0.42.1
 ARG TORCH_CUDA_INDEX_URL="https://download.pytorch.org/whl/cu130"
 
 # Python 3.12, git, ビルドツールのインストール
